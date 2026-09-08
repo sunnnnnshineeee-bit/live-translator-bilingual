@@ -124,9 +124,17 @@ export function transcribeAudio(
             errorOutput,
           )
 
+          // 3221225781 = 0xC0000135 (Windows: DLL not found).
+          // whisper-cli.exe must sit next to its whisper.dll /
+          // ggml.dll, and the system needs the VC++ runtime.
+          const hint =
+            code === 3221225781
+              ? " (0xC0000135: DLL not found. whisper-cli.exe needs whisper.dll and ggml.dll in the SAME folder — re-extract whisper-bin-x64.zip into whisper.cpp\\build\\bin. If the DLLs are there, install the VC++ Redistributable x64: https://aka.ms/vs/17/release/vc_redist.x64.exe)"
+              : ""
+
           reject(
             new Error(
-              `Whisper exited with code ${code}`,
+              `Whisper exited with code ${code}${hint}`,
             ),
           )
 
