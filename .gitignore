@@ -1,0 +1,45 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+dist
+dist-ssr
+*.local
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# AI models (~3.4 GB, downloaded via scripts/download-models.*)
+models/
+
+# whisper.cpp source + build + models (cloned & built separately)
+whisper.cpp/
+
+# llama.cpp binaries (downloaded/built per platform)
+llama/
+
+# Whisper temp audio slices
+tmp-whisper-*.wav
+
+# One-off model A/B test script
+tmp-test-17b.sh
+
+# Stray dir from a mistyped command
+touch src/
+
+# Old backup
+server.backup.ts
