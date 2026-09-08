@@ -21,10 +21,16 @@ if (-not (Test-Path $exe)) {
   exit 1
 }
 
+$cores = [Environment]::ProcessorCount
+# llama-server shares the CPU with whisper — give it half the
+# logical cores (min 2) so the two processes stop fighting.
+$threads = [Math]::Max(2, [int]($cores / 2))
+Write-Host "Logical processors: $cores -> llama-server threads: $threads"
+
 & $exe `
   -m models/Qwen3-1.7B-Q4_K_M.gguf `
   -c 4096 `
   -np 2 `
-  -t 8 `
+  -t $threads `
   --host 127.0.0.1 `
   --port 8080

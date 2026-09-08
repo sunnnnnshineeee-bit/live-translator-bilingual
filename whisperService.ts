@@ -1,4 +1,5 @@
 import { spawn } from "child_process"
+import os from "os"
 
 const WHISPER_CLI =
   process.env.WHISPER_CLI
@@ -17,6 +18,26 @@ const WHISPER_MODEL =
     : process.platform === "win32"
       ? "./whisper.cpp/models/ggml-base-q5_1.bin"
       : "./whisper.cpp/models/ggml-large-v3-turbo-q5_0.bin"
+
+// ------------------------------------------------------------
+// CPU 线程数：whisper 和 llama-server 同时跑、共享同一颗 CPU。
+// 线程数超过逻辑核心数（比如 4 核机器上开 8 线程）会让两边
+// 互相踩踏、都变慢，所以按实际核心数来，可用
+// WHISPER_THREADS=8 环境变量覆盖。
+// ------------------------------------------------------------
+
+const WHISPER_THREADS =
+  process.env.WHISPER_THREADS
+    ? process.env.WHISPER_THREADS
+    : String(
+        Math.min(
+          8,
+          Math.max(
+            2,
+            os.cpus().length,
+          ),
+        ),
+      )
   
 export type WhisperLanguage =
   | "auto"
@@ -63,11 +84,13 @@ export function transcribeAudio(
       "./whisper.cpp/models/ggml-silero-v6.2.0.bin",
 
       // ------------------------------------------------
-      // CPU 线程：默认 4 → 8（实测快约 15%）
+      // CPU 线程：按机器核心数自动匹配
+      // （whisper 和 llama-server 同时运行，超订线程
+      //   只会让两个进程互相抢 CPU）
       // ------------------------------------------------
 
       "-t",
-      "8",
+      WHISPER_THREADS,
       "-mc",
       "0",
 

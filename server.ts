@@ -187,8 +187,14 @@ let silenceFlushTimer:
 let activeTranslations =
   0
 
+// ------------------------------------------------------------
+// Keep this in sync with llama-server's -np (2 slots).
+// A 3rd concurrent request just queues inside llama-server
+// and thrashes the CPU on pure-CPU machines.
+// ------------------------------------------------------------
+
 const MAX_PARALLEL_TRANSLATIONS =
-  3
+  2
 
 
 type TranslationJob = {
@@ -918,6 +924,31 @@ function queueTranslation(
   }
 
 
+  // ----------------------------------------------------------
+  // Backlog protection: for live subtitles a translation that
+  // arrives several sentences late is useless. If jobs already
+  // piled up (Qwen slower than speech on this CPU), drop the
+  // older ones and keep only the newest sentences.
+  // ----------------------------------------------------------
+
+  if (
+    translationQueue.length >
+    1
+  ) {
+
+    const dropped =
+      translationQueue.splice(
+        0,
+        translationQueue.length -
+          1,
+      )
+
+    console.log(
+      `Dropped ${dropped.length} stale translation job(s) (translation backlog)`,
+    )
+  }
+
+
   const job:
     TranslationJob = {
 
@@ -1292,6 +1323,25 @@ async function runTranslationJob(
         outLang === inputLang ||
         outLang === "other"
       ) {
+
+        // ------------------------------------------------
+        // A guard retry doubles the Qwen load. When jobs are
+        // already waiting, skip the subtitle instead — a late
+        // retry makes the whole pipeline fall further behind.
+        // ------------------------------------------------
+
+        if (
+          translationQueue.length >
+          0
+        ) {
+
+          console.log(
+            `Direction guard: ${inputLang} in → ${outLang} out. Queue busy, retry skipped.`,
+          )
+
+          return
+        }
+
         console.log(
           `Direction guard: ${inputLang} in → ${outLang} out. Retrying...`,
         )
@@ -2052,6 +2102,136 @@ async function handleWhisperText(
 // Audio queue processor
 // ============================================================
 
+// ------------------------------------------------------------
+// 积压时最多把多少个切片合并成一次 Whisper 调用。
+// 每个切片约 1.5s，4 个 = 6s 音频。
+// ------------------------------------------------------------
+
+const MAX_MERGED_CHUNKS = 4
+
+
+// ------------------------------------------------------------
+// 合并多个 WAV 切片。
+//
+// 浏览器端 float32ToWav 写的是固定 44 字节头 +
+// 16-bit PCM 单声道，直接拼 PCM 数据再补一个头即可。
+//
+// 为什么要合并：每次调用 whisper-cli 都要
+// 启动进程 + 从磁盘加载模型 + 跑 VAD，
+// 这些固定开销按“次数”收费，不按“秒数”收费。
+// CPU 慢的机器上，一次识别 6s 音频远快于四次识别 1.5s。
+// ------------------------------------------------------------
+
+function mergeWavBuffers(
+  buffers: Buffer[],
+): {
+  wav: Buffer
+  seconds: number
+} | null {
+
+  const parts:
+    Buffer[] =
+    []
+
+  let totalBytes = 0
+
+
+  for (
+    const buffer of buffers
+  ) {
+
+    // 只信任自家编码器的格式；遇到意外格式放弃合并
+
+    if (
+      buffer.length <= 44 ||
+      buffer
+        .toString(
+          "ascii",
+          0,
+          4,
+        ) !== "RIFF"
+    ) {
+
+      return null
+    }
+
+    const pcm =
+      buffer.subarray(
+        44,
+      )
+
+    parts.push(
+      pcm,
+    )
+
+    totalBytes +=
+      pcm.length
+  }
+
+
+  if (
+    totalBytes === 0
+  ) {
+
+    return null
+  }
+
+
+  const sampleRate =
+    buffers[0].readUInt32LE(
+      24,
+    )
+
+
+  const wav =
+    Buffer.alloc(
+      44 + totalBytes,
+    )
+
+  buffers[0].copy(
+    wav,
+    0,
+    0,
+    44,
+  )
+
+  wav.writeUInt32LE(
+    36 + totalBytes,
+    4,
+  )
+
+  wav.writeUInt32LE(
+    totalBytes,
+    40,
+  )
+
+
+  let offset = 44
+
+  for (
+    const part of parts
+  ) {
+
+    part.copy(
+      wav,
+      offset,
+    )
+
+    offset +=
+      part.length
+  }
+
+
+  return {
+    wav,
+    seconds:
+      totalBytes /
+      2 /
+      sampleRate,
+  }
+}
+
+
 async function processAudioQueue() {
 
   if (
@@ -2074,23 +2254,26 @@ async function processAudioQueue() {
     ) {
 
       // ------------------------------------------------
-      // Backlog protection: when transcription is slower
-      // than real time (slow CPU), drop everything except
-      // the 2 newest chunks. Old chunks are stale by the
-      // time they would be transcribed anyway — without
-      // this, latency grows without bound.
+      // Backlog handling: when transcription is slower
+      // than real time, chunks pile up while Whisper is
+      // busy. MERGE the pending chunks into ONE call —
+      // same speech content, a fraction of the per-call
+      // overhead (process spawn + model load + VAD).
+      //
+      // Anything older than the newest MAX_MERGED_CHUNKS
+      // is stale — drop it so latency stays bounded.
       // ------------------------------------------------
 
       if (
         audioQueue.length >
-        2
+        MAX_MERGED_CHUNKS
       ) {
 
         const dropped =
           audioQueue.splice(
             0,
             audioQueue.length -
-              2,
+              MAX_MERGED_CHUNKS,
           )
 
         console.log(
@@ -2100,23 +2283,45 @@ async function processAudioQueue() {
         )
       }
 
-      const job =
-        audioQueue.shift()
+
+      const jobs =
+        audioQueue.splice(
+          0,
+          audioQueue.length,
+        )
 
 
       if (
-        !job
+        jobs.length ===
+        0
       ) {
-
         continue
       }
 
 
-      const {
-        socket,
-        audio,
-      } =
-        job
+      const socket =
+        jobs[0].socket
+
+
+      const merged =
+        mergeWavBuffers(
+          jobs.map(
+            (job) => job.audio,
+          ),
+        )
+
+
+      // Unexpected format -> fall back to the first chunk alone
+
+      const wav =
+        merged?.wav ??
+        jobs[0].audio
+
+      const audioSeconds =
+        merged?.seconds ??
+        (jobs[0].audio.length - 44) /
+          2 /
+          16000
 
 
       const filename =
@@ -2129,15 +2334,13 @@ async function processAudioQueue() {
 
         console.log("")
         console.log(
-          "Processing audio queue:",
-          audioQueue.length,
-          "remaining",
+          `Processing ${jobs.length} audio chunk(s), ${audioSeconds.toFixed(1)}s of audio, ${audioQueue.length} remaining`,
         )
 
 
         await writeFile(
           filename,
-          audio,
+          wav,
         )
 
 
@@ -2152,11 +2355,27 @@ async function processAudioQueue() {
         )
 
 
-           const result =
+        const whisperStartedAt =
+          Date.now()
+
+        const result =
           await transcribeAudio(
             filename,
             sourceLanguage,
           )
+
+        const whisperElapsed =
+          (Date.now() -
+            whisperStartedAt) /
+          1000
+
+        console.log(
+          `Whisper took ${whisperElapsed.toFixed(1)}s for ${audioSeconds.toFixed(1)}s of audio` +
+            (whisperElapsed >
+            audioSeconds
+              ? " (SLOWER than real time — expect lag)"
+              : ""),
+        )
 
 
         console.log("")

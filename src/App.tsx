@@ -301,6 +301,12 @@ let totalSamples = 0
 
 const TARGET_SAMPLES = 16000 * 1.5
 
+// 末尾重叠：给下一片 Whisper 提供边界上下文，避免单词被切断。
+// 必须保持很短——重叠部分每片都会被重新识别一遍，
+// 之前把整段 1.5s 全部重叠等于让 Whisper 做双倍计算量。
+// 0.3s 足够接住被切断的词。
+const OVERLAP_SAMPLES = Math.floor(16000 * 0.3)
+
 let overlapTail: Float32Array | null =
   null
 
@@ -332,8 +338,14 @@ await recorder.start((audio) => {
 
     samples.set(fresh, overlapTail?.length ?? 0)
 
-    // 本段新增部分留作下一段的上下文
-    overlapTail = fresh
+    // 只保留末尾 0.3s 作为下一片的边界上下文
+    overlapTail =
+      fresh.length > OVERLAP_SAMPLES
+        ? fresh.slice(
+            fresh.length -
+              OVERLAP_SAMPLES,
+          )
+        : fresh
 
     // ----------------------------
     // 静音切片直接丢弃
@@ -364,7 +376,7 @@ await recorder.start((audio) => {
     }
 
     console.log(
-  "Sending 1.5 seconds of audio to Whisper...",
+  `Sending ${(samples.length / 16000).toFixed(1)}s of audio to Whisper...`,
 )
 
     const wav = float32ToWav(
