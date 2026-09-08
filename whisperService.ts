@@ -7,8 +7,16 @@ const WHISPER_CLI =
       ? "./whisper.cpp/build/bin/Release/whisper-cli.exe"
       : "./whisper.cpp/build/bin/whisper-cli"
 
+// Speech recognition model. Windows defaults to the much smaller
+// base model — large-v3-turbo cannot run in real time on a pure
+// CPU PC. Override with the WHISPER_MODEL env var, e.g.:
+//   WHISPER_MODEL=./whisper.cpp/models/ggml-large-v3-turbo-q5_0.bin
 const WHISPER_MODEL =
-  "./whisper.cpp/models/ggml-large-v3-turbo-q5_0.bin"
+  process.env.WHISPER_MODEL
+    ? process.env.WHISPER_MODEL
+    : process.platform === "win32"
+      ? "./whisper.cpp/models/ggml-base-q5_1.bin"
+      : "./whisper.cpp/models/ggml-large-v3-turbo-q5_0.bin"
   
 export type WhisperLanguage =
   | "auto"

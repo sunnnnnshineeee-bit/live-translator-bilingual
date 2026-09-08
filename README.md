@@ -94,7 +94,7 @@ Model files are not stored in git — download them with the scripts (hf-mirror.
 bash scripts/download-models.sh
 ```
 
-**Windows（PowerShell）：**（~1.6 GB，含 Qwen3-1.7B，CPU 友好 / includes Qwen3-1.7B, CPU-friendly）
+**Windows（PowerShell）：**（~1.1 GB，含 Qwen3-1.7B，CPU 友好 / includes Qwen3-1.7B, CPU-friendly）
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts\download-models.ps1
@@ -102,10 +102,18 @@ powershell -ExecutionPolicy Bypass -File scripts\download-models.ps1
 
 下载完成后 / After downloading:
 
-- `whisper.cpp/models/ggml-large-v3-turbo-q5_0.bin` — 语音识别 / speech recognition（574 MB）
+- `whisper.cpp/models/ggml-base-q5_1.bin` — 语音识别（Windows 用小模型保证实时）/ speech recognition（57 MB，Windows uses the small model for real-time speed）
+- `whisper.cpp/models/ggml-large-v3-turbo-q5_0.bin` — 语音识别（macOS）/ speech recognition on macOS（574 MB，仅 macOS 下载 / macOS only）
 - `whisper.cpp/models/ggml-silero-v6.2.0.bin` — VAD 静音检测 / VAD silence detection（864 KB）
 - `models/Qwen3-4B-Q4_K_M.gguf` — 翻译（macOS）/ translation（2.3 GB）
 - `models/Qwen3-1.7B-Q4_K_M.gguf` — 翻译（Windows）/ translation（1.0 GB）
+
+> Windows 默认用小识别模型（纯 CPU 跑大模型跟不上实时）。机器性能好想要更高精度：把 `ggml-large-v3-turbo-q5_0.bin` 下到 `whisper.cpp/models/`，然后这样启动后端 / On a strong machine, download the large model and start the backend like this:
+>
+> ```powershell
+> $env:WHISPER_MODEL="whisper.cpp/models/ggml-large-v3-turbo-q5_0.bin"
+> npx tsx server.ts
+> ```
 
 ### 3. 编译 whisper.cpp / Build whisper.cpp
 
@@ -222,13 +230,16 @@ npm run dev
 | Overlay 一片空白<br>Overlay is blank | 确认三个终端都开着；浏览器 F12 看 Console 报错<br>Make sure all three terminals are running; check the browser console (F12) |
 | 翻译一直转不出来<br>Translation never arrives | llama-server 没起来或 8080 被占用：`curl http://127.0.0.1:8080/health`<br>llama-server isn't running or port 8080 is occupied |
 | 无声时出幻听字幕<br>Ghost subtitles during silence | 检查 `whisper.cpp/models/ggml-silero-v6.2.0.bin` 是否下载成功<br>Check that the silero VAD model downloaded successfully |
-| 连续说话越来越卡<br>Gets laggier the longer you talk | CPU 扛不住 3s 窗口：看终端 "Processing audio queue: N remaining"，N 持续上涨就把 start-llama 里 `-np 2` 改成 `-np 1`，或换小模型<br>CPU can't keep up — if N keeps climbing, change `-np 2` to `-np 1` in start-llama, or use a smaller model |
+| 识别结果完全不对，凭空出现"他开始说话了""Now I'm going to start writing"这类没人说过的话<br>Recognition is completely wrong, outputs phrases nobody said | 你的声音根本没进音频流——浏览器采错了麦克风。在页面里的设备下拉选对麦克风；再检查 Chrome/Edge 地址栏的麦克风图标。对着页面说话看音量条：基本不动就是采错设备（也查一下 Windows 设置 → 隐私 → 麦克风）<br>Your voice is not reaching the app — wrong microphone. Pick the correct mic in the app's device dropdown and check the mic icon in the address bar; if the volume bar barely moves, Windows is capturing the wrong device |
+| 连续说话越来越卡<br>Gets laggier the longer you talk | 现在会自动丢弃积压的旧音频（终端会出现 "Dropped N stale audio chunks"），慢 CPU 上延迟也有上限。仍慢就关掉占 CPU 的程序，或把 start-llama 里 `-np 2` 改成 `-np 1`<br>Stale audio chunks are now dropped automatically, so latency stays bounded even on slow CPUs. If still slow, close CPU-heavy apps or change `-np 2` to `-np 1` in start-llama |
 | 端口冲突<br>Port conflicts | 3001（后端）/ 8080（llama）/ 5173（前端）被占用时改对应配置<br>Adjust the corresponding config when 3001 / 8080 / 5173 is occupied |
 
 ## 已知限制 / Known Limitations
 
 - 识别语言仅支持中文、英文（其他语言按幻觉过滤丢弃）
   Recognition supports Chinese and English only (other languages are filtered out as hallucinations)
+- Windows 默认用小的 `base-q5_1` 识别模型（纯 CPU 保证实时），精度略低于 macOS 用的 `large-v3-turbo`（升级方法见第 2 步的说明）
+  Windows uses the smaller `base-q5_1` recognition model by default for real-time speed on CPU; accuracy is somewhat below the macOS `large-v3-turbo` (see the note in Step 2 to upgrade)
 - Windows 纯 CPU + 1.7B 模型下，译文总延迟约 **3–5 秒**（原文渐进入幕 ~2 秒先出）；有 N 卡装 CUDA 版 llama.cpp 可降到 ~2 秒
   On pure-CPU Windows with the 1.7B model, total subtitle latency is about **3–5 s** (original text appears in ~2 s via progressive display); an NVIDIA GPU with the CUDA build brings it down to ~2 s
 - 1.7B 翻译质量略低于 4B，短句基本无差别，长难句偶有不顺；偶发繁体中文输出（方向守卫会兜底重试）。追求质量可在 Windows 上也改用 4B（下载脚本里换成 4B 的文件名即可，内存需 16 GB）

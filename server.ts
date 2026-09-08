@@ -2073,6 +2073,33 @@ async function processAudioQueue() {
       0
     ) {
 
+      // ------------------------------------------------
+      // Backlog protection: when transcription is slower
+      // than real time (slow CPU), drop everything except
+      // the 2 newest chunks. Old chunks are stale by the
+      // time they would be transcribed anyway — without
+      // this, latency grows without bound.
+      // ------------------------------------------------
+
+      if (
+        audioQueue.length >
+        2
+      ) {
+
+        const dropped =
+          audioQueue.splice(
+            0,
+            audioQueue.length -
+              2,
+          )
+
+        console.log(
+          "Dropped",
+          dropped.length,
+          "stale audio chunks (queue backlog)",
+        )
+      }
+
       const job =
         audioQueue.shift()
 

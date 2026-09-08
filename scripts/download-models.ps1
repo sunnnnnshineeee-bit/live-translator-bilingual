@@ -1,6 +1,6 @@
 # ============================================================
 # Download the three model files required by live-translator.
-# Total ~1.6 GB.
+# Total ~1.1 GB.
 # Tries hf-mirror.com first (fast in CN), falls back to
 # huggingface.co. Safe to re-run: complete files are skipped,
 # partial downloads resume automatically (-C -) and file sizes
@@ -17,9 +17,9 @@ $hf = "https://huggingface.co"
 
 # Expected sizes (bytes), used to verify completeness.
 $sizes = @{
-  "ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo-q5_0.bin" = 574041195
-  "ggml-org/whisper-vad/resolve/main/ggml-silero-v6.2.0.bin"        = 885098
-  "unsloth/Qwen3-1.7B-GGUF/resolve/main/Qwen3-1.7B-Q4_K_M.gguf"     = 1107409472
+  "ggerganov/whisper.cpp/resolve/main/ggml-base-q5_1.bin"            = 59707625
+  "ggml-org/whisper-vad/resolve/main/ggml-silero-v6.2.0.bin"         = 885098
+  "unsloth/Qwen3-1.7B-GGUF/resolve/main/Qwen3-1.7B-Q4_K_M.gguf"      = 1107409472
 }
 
 function Fetch($path, $out) {
@@ -57,9 +57,15 @@ function Fetch($path, $out) {
   throw "download failed: $path (got $have of $expected bytes)"
 }
 
-# 1. Whisper speech recognition model (574 MB)
-Fetch "ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo-q5_0.bin" `
-      "whisper.cpp/models/ggml-large-v3-turbo-q5_0.bin"
+# 1. Whisper speech recognition model (57 MB).
+#    Windows uses base-q5_1: large-v3-turbo (574 MB) cannot run in
+#    real time on a pure-CPU PC, and the queue backs up endlessly.
+#    If you have a strong machine and want better accuracy,
+#    download ggml-large-v3-turbo-q5_0.bin into the same folder and
+#    start the server with:
+#      $env:WHISPER_MODEL="whisper.cpp/models/ggml-large-v3-turbo-q5_0.bin"
+Fetch "ggerganov/whisper.cpp/resolve/main/ggml-base-q5_1.bin" `
+      "whisper.cpp/models/ggml-base-q5_1.bin"
 
 # 2. Silero VAD model (864 KB) - kills silence/noise hallucinations
 Fetch "ggml-org/whisper-vad/resolve/main/ggml-silero-v6.2.0.bin" `
