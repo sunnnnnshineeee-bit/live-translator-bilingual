@@ -74,6 +74,9 @@ All commands below run in the project root.
 
 ### 1. 克隆本仓库并安装依赖 / Clone the repo and install dependencies
 
+macOS 用终端、Windows 用 PowerShell，命令完全相同。
+Use Terminal (macOS) or PowerShell (Windows) — the commands are identical on both platforms.
+
 ```bash
 git clone https://github.com/sunnnnnshineeee-bit/live-translator-bilingual.git
 cd live-translator-bilingual
@@ -106,13 +109,23 @@ powershell -ExecutionPolicy Bypass -File scripts\download-models.ps1
 
 ### 3. 编译 whisper.cpp / Build whisper.cpp
 
+**macOS / Linux（终端 / Terminal）：**
+
 ```bash
 git clone https://github.com/ggml-org/whisper.cpp
 cd whisper.cpp
 cmake -B build
-cmake --build build -j              # macOS / Linux
-# Windows 用这条代替 / Windows: use this instead:
-# cmake --build build --config Release
+cmake --build build -j
+cd ..
+```
+
+**Windows（PowerShell）：**
+
+```powershell
+git clone https://github.com/ggml-org/whisper.cpp
+cd whisper.cpp
+cmake -B build
+cmake --build build --config Release
 cd ..
 ```
 
@@ -131,16 +144,29 @@ Run `brew install llama.cpp` or build it yourself — make sure `llama/llama-ser
 
 ## 运行（需要开 3 个终端）/ Running (3 terminals)
 
+**终端 1：翻译模型服务（占用 8080 端口）/ Terminal 1 — translation model server (port 8080):**
+
+macOS / Linux：
+
 ```bash
-# 终端 1：翻译模型服务（占用 8080 端口）/ Terminal 1: translation model server (port 8080)
-bash scripts/start-llama.sh          # macOS / Linux
-# Windows:
-# powershell -ExecutionPolicy Bypass -File scripts\start-llama.ps1
+bash scripts/start-llama.sh
+```
 
-# 终端 2：字幕后端（占用 3001 端口）/ Terminal 2: subtitle backend (port 3001)
+Windows（PowerShell）：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\start-llama.ps1
+```
+
+**终端 2：字幕后端（占用 3001 端口，两平台相同）/ Terminal 2 — subtitle backend (port 3001, same on both platforms):**
+
+```bash
 npx tsx server.ts
+```
 
-# 终端 3：前端 / Terminal 3: frontend
+**终端 3：前端（两平台相同）/ Terminal 3 — frontend (same on both platforms):**
+
+```bash
 npm run dev
 ```
 
