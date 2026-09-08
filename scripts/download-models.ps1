@@ -22,15 +22,20 @@ function Fetch($path, $out) {
   $dir = Split-Path $out -Parent
   New-Item -ItemType Directory -Force -Path $dir | Out-Null
 
-  curl.exe -L -C - --fail -o $out "$mirror/$path"
-  if ($LASTEXITCODE -ne 0) {
-    Write-Host "mirror failed, trying huggingface.com ..."
-    curl.exe -L -C - --fail -o $out "$hf/$path"
-    if ($LASTEXITCODE -ne 0) {
-      throw "download failed: $path"
+  # Try each source up to 3 times; -C - resumes partial downloads,
+  # so a dropped connection just continues on the next attempt.
+  foreach ($src in @($mirror, $hf)) {
+    for ($i = 1; $i -le 3; $i++) {
+      curl.exe -L -C - --fail --connect-timeout 20 -o $out "$src/$path"
+      if ($LASTEXITCODE -eq 0) {
+        Write-Host "[done] $out"
+        return
+      }
+      Write-Host "attempt $i via $src failed (curl exit $LASTEXITCODE) - retrying in 5s, partial download resumes ..."
+      Start-Sleep -Seconds 5
     }
   }
-  Write-Host "[done] $out"
+  throw "download failed: $path (tried hf-mirror.com and huggingface.co, 3 attempts each)"
 }
 
 # 1. Whisper speech recognition model (574 MB)
